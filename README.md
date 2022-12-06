@@ -1,5 +1,8 @@
 # UQ-Coursework
-Some coding work for my bachelor of mathematics degree and master of data science degree at UQ. 
 
-Below courses are included:
-- 
+Here is some coursework from my bachelor of mathematics and master of data science degrees at UQ.
+
+- STAT3006 Statistical Learning
+- MATH3405 Differential Geometry
+- DATA7703 Machine Learning for Data Scientists
+- DATA7201 Data Analytics at Scale
