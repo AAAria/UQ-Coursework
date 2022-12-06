@@ -1,0 +1,382 @@
+---
+title: "STAT3006 A3 T3 KNN"
+output:
+  html_document:
+    df_print: paged
+  html_notebook: default
+  pdf_document: default
+---
+<br>
+
+```{r}
+train <- read.csv(file = 'mnist_train.csv')
+test <- read.csv(file = 'mnist_test.csv')
+```
+
+##### a)
+```{r}
+dim(train)
+dim(test)
+table(train$label)
+table(test$label)
+
+x <- as.matrix(train[,2:785],60000,784)
+library(ggplot2)
+library(matrixStats)
+sds <- colSds(x)
+qplot(sds,bins=256)
+```
+
+```{r}
+# Prepare data
+x_train <- train[,2:785] # train without label
+y_train <- factor(train[,1]) # train label
+x_test <- test[,2:785] # test without label
+y_test <- factor(test[,1]) # test label
+
+# remove the zero variance columns for training set
+library(caret)
+x_nzv <- nearZeroVar(x_train)
+x_col <- setdiff(1:784, x_nzv)
+x_train_nzv <- x_train[,x_col]
+
+```
+
+
+##### b)
+
+```{r}
+# improve efficiency
+library(doParallel)
+registerDoParallel(cores=8)
+
+# train knn model
+library(caret)
+set.seed(123)
+ctrl <- trainControl(method = "cv", number=5, p=.9) # 5-fold CV
+knnFit <- train(x_train_nzv, y_train, method = "knn", trControl = ctrl)
+plot(knnFit) # choose k value
+
+```
+
+Predictions for test set:
+```{r}
+# predictions for test set
+pred_knn <- predict(knnFit, x_test)
+conf_knn_test <- as.matrix(confusionMatrix(pred_knn, y_test))
+conf_knn_test
+
+```
+
+Error rates for test set:
+```{r}
+# Error rates for test set
+digit = c(0:9)
+test_error <- data.frame(digit = c(digit,"overall"), error_rate=NA, CI_left=NA, CI_right=NA)
+
+# class-specific error rates & CI
+for (n in digit){
+  all = sum(conf_knn_test[,n+1])
+  success = conf_knn_test[n+1,n+1]
+  fail = all - success
+  CI <- binom.test(c(fail,success), conf.level = 0.95)$conf.int
+  # record error rate & CI
+  test_error$error_rate[test_error$digit==n] <- fail/all
+  test_error$CI_left[test_error$digit==n] <- CI[1]
+  test_error$CI_right[test_error$digit==n] <- CI[2]
+}
+
+# overall error rate & CI
+all = sum(conf_knn_test)
+success = sum(diag(conf_knn_test))
+fail = all - success
+success = sum(diag(conf_knn_test))
+CI <- binom.test(c(fail,success), conf.level = 0.95)$conf.int
+test_error$error_rate[test_error$digit=='overall'] <- fail/all
+test_error$CI_left[test_error$digit=='overall'] <- CI[1]
+test_error$CI_right[test_error$digit=='overall'] <- CI[2]
+
+test_error
+```
+
+##### c) 
+```{r}
+# predictions for training set
+pred_knn_train <- predict(knnFit, x_train) # predict test set
+conf_knn_train <- as.matrix(confusionMatrix(pred_knn_train, y_train))
+conf_knn_train
+```
+
+Error rates for training set
+```{r}
+# error rates for training set
+train_error <- data.frame(digit = c(digit,"overall"), error_rate=NA, CI_left=NA, CI_right=NA)
+
+# class-specific error rates & CI
+for (n in digit){
+  all = sum(conf_knn_train[,n+1])
+  success = conf_knn_train[n+1,n+1]
+  fail = all - success
+  CI <- binom.test(c(fail,success), conf.level = 0.95)$conf.int
+  # record error rate & CI
+  train_error$error_rate[train_error$digit==n] <- fail/all
+  train_error$CI_left[train_error$digit==n] <- CI[1]
+  train_error$CI_right[train_error$digit==n] <- CI[2]
+}
+
+# overall error rate & CI
+all = sum(conf_knn_train)
+success = sum(diag(conf_knn_train))
+fail = all - success
+CI <- binom.test(c(fail,success), conf.level = 0.95)$conf.int
+train_error$error_rate[train_error$digit=='overall'] <- fail/all
+train_error$CI_left[train_error$digit=='overall'] <- CI[1]
+train_error$CI_right[train_error$digit=='overall'] <- CI[2]
+
+train_error
+```
+
+
+
+##### e)
+```{r}
+# Visualize data
+library(RColorBrewer)
+BNW <- c("white", "black")
+CUSTOM_BNW <- colorRampPalette(colors = BNW)
+rotate <- function(x) t(apply(x, 2, rev))
+
+```
+
+Successful examples of each digit: 
+```{r}
+# Successful examples of each digit from test set
+par(mfrow = c(3, 4), mar=c(2, 2, 2, 2), pty ='s')
+for (n in c(0:9)){
+  knn_digit <- which(pred_knn == y_test & y_test == n) # correctly classified
+  index = sample(knn_digit,1)
+  m = rotate(matrix(unlist(x_test[index,-1]),ncol = 28,byrow = T))
+  image(m, col=CUSTOM_BNW(255), main = paste("Actual:", y_test[index], "Predicted:", pred_knn[index]))}
+
+```
+
+
+##### f)
+Failed examples of each digit from train set: 
+```{r}
+# failed examples of each digit from train set
+par(mfrow = c(3, 4), mar=c(2, 2, 2, 2), pty ='s')
+for (n in c(0:9)){
+  knn_digit <- which(pred_knn_train != y_train & y_train == n) # misclassification
+  index = sample(knn_digit,1)
+  m = rotate(matrix(unlist(x_train[index,-1]),ncol = 28,byrow = T))
+  image(m, col=CUSTOM_BNW(255), main = paste("Actual:", y_train[index], "Predicted:", pred_knn_train[index]))}
+
+```
+
+#### g)
+```{r}
+# successful & failed examples of 1
+par(mfrow = c(2, 4), mar=c(2, 2, 2, 2), pty ='s')
+
+knn_digit_s1 <- which(pred_knn == y_test & y_test== 1) # successful example of 1
+index = sample(knn_digit_s1,4)
+for (i in index){
+  m = rotate(matrix(unlist(x_test[i,-1]),ncol = 28,byrow = T))
+  image(m, col=CUSTOM_BNW(255), main = paste("Actual:", y_test[i], "Predicted:", pred_knn[i]))
+}
+knn_digit_f1 <- which(pred_knn_train != y_train & y_train== 1) # failed example of 1
+index = sample(knn_digit_f1,4)
+for (i in index){
+  m = rotate(matrix(unlist(x_train[i,-1]),ncol = 28,byrow = T))
+  image(m, col=CUSTOM_BNW(255), main = paste("Actual:", y_train[i], "Predicted:", pred_knn_train[i]))
+}
+
+```
+
+```{r}
+# successful & failed examples of 7
+par(mfrow = c(2, 4), mar=c(2, 2, 2, 2), pty ='s')
+
+knn_digit_s1 <- which(pred_knn == y_test & y_test== 7) # successful example of 7
+index = sample(knn_digit_s1,4)
+for (i in index){
+  m = rotate(matrix(unlist(x_test[i,-1]),ncol = 28,byrow = T))
+  image(m, col=CUSTOM_BNW(255), main = paste("Actual:", y_test[i], "Predicted:", pred_knn[i]))
+}
+knn_digit_f1 <- which(pred_knn_train != y_train & y_train== 7) # failed example of 7
+index = sample(knn_digit_f1,4)
+for (i in index){
+  m = rotate(matrix(unlist(x_train[i,-1]),ncol = 28,byrow = T))
+  image(m, col=CUSTOM_BNW(255), main = paste("Actual:", y_train[i], "Predicted:", pred_knn_train[i]))
+}
+
+```
+
+## SVM
+
+#### b) error rates for test set
+```{r}
+# improve efficiency
+library(doParallel)
+registerDoParallel(cores=8)
+
+# train SVM model
+library(caret)
+ctrl <- trainControl(method = "cv", number = 5, verboseIter = F, allowParallel = T) # 5-fold CV
+SVMfit <- train(x_train, y_train, method = "svmRadial", trControl = ctrl)
+SVMfit # choose sigma and cost value
+
+```
+
+Predictions for test set:
+```{r}
+# predictions for test set
+pred_SVM <- as.numeric(predict(SVMfit, x_test))-1
+conf_SVM_test <- as.matrix(confusionMatrix(pred_SVM), y_test)
+conf_SVM_test
+
+```
+
+Error Rates for test set:
+```{r}
+# error Rates for test set
+test_error <- data.frame(digit = c(digit,"overall"), error_rate=NA, CI_left=NA, CI_right=NA)
+
+# class-specific error rates & CI
+for (n in digit){
+  all = sum(conf_SVM_test[,n+1])
+  success = conf_SVM_test[n+1,n+1]
+  fail = all - success
+  CI <- binom.test(c(fail,success), conf.level = 0.95)$conf.int
+  # record error rate & CI
+  test_error$error_rate[test_error$digit==n] <- fail/all
+  test_error$CI_left[test_error$digit==n] <- CI[1]
+  test_error$CI_right[test_error$digit==n] <- CI[2]
+}
+
+# overall error rate & CI
+all = sum(conf_SVM_test)
+success = sum(diag(conf_SVM_test))
+fail = all - success
+CI <- binom.test(c(fail,success), conf.level = 0.95)$conf.int
+test_error$error_rate[test_error$digit=='overall'] <- fail/all
+test_error$CI_left[test_error$digit=='overall'] <- CI[1]
+test_error$CI_right[test_error$digit=='overall'] <- CI[2]
+
+test_error
+
+```
+
+
+
+#### c) error rates for training set
+```{r}
+# predictions for training set
+pred_SVM_train <- as.numeric(predict(SVMfit, x_train))-1
+conf_SVM_train <- as.matrix(confusionMatrix(factor(pred_SVM_train), y_train))
+conf_SVM_train
+
+```
+
+Error rates for training set:
+```{r}
+# error rates for training set
+train_error <- data.frame(digit = c(digit,"overall"), error_rate=NA, CI_left=NA, CI_right=NA)
+
+# class-specific error rates & CI
+for (n in digit){
+  all = sum(conf_SVM_train[,n+1])
+  success = conf_SVM_train[n+1,n+1]
+  fail = all - success
+  CI <- binom.test(c(fail,success), conf.level = 0.95)$conf.int
+  # record error rate & CI
+  train_error$error_rate[train_error$digit==n] <- fail/all
+  train_error$CI_left[train_error$digit==n] <- CI[1]
+  train_error$CI_right[train_error$digit==n] <- CI[2]
+}
+
+# overall error rate & CI
+all = sum(conf_SVM_train)
+success = sum(diag(conf_SVM_train))
+fail = all - success
+CI <- binom.test(c(fail,success), conf.level = 0.95)$conf.int
+train_error$error_rate[train_error$digit=='overall'] <- fail/all
+train_error$CI_left[train_error$digit=='overall'] <- CI[1]
+train_error$CI_right[train_error$digit=='overall'] <- CI[2]
+
+train_error
+
+```
+
+##### e)
+```{r}
+# Visualize data
+library(RColorBrewer)
+BNW <- c("white", "black")
+CUSTOM_BNW <- colorRampPalette(colors = BNW)
+rotate <- function(x) t(apply(x, 2, rev))
+```
+
+Successful examples of each digit: 
+```{r}
+# successful examples of each digit
+par(mfrow = c(3, 4), mar=c(2, 2, 2, 2), pty ='s')
+for (n in c(0:9)){
+  SVM_digit <- which(pred_SVM == y_test & y_test == n) # correctly classified
+  index = sample(SVM_digit,1)
+  m = rotate(matrix(unlist(x_test[index,-1]),ncol = 28,byrow = T))
+  image(m, col=CUSTOM_BNW(255), main = paste("Actual:", y_test[index], "Predicted:", pred_SVM[index]))}
+```
+
+##### f)
+Failed examples of each digit from train set: 
+```{r}
+# failed examples of each digit from train set
+par(mfrow = c(3, 4), mar=c(2, 2, 2, 2), pty ='s')
+for (n in c(0:9)){
+  SVM_digit <- which(pred_SVM_train != y_train & y_train == n) # misclassification
+  index = sample(SVM_digit,1)
+  m = rotate(matrix(unlist(x_train[index,-1]),ncol = 28,byrow = T))
+  image(m, col=CUSTOM_BNW(255), main = paste("Actual:", y_train[index], "Predicted:", pred_SVM_train[index]))}
+
+```
+
+#### g)
+```{r}
+# successful & failed examples of 1
+par(mfrow = c(2, 4), mar=c(2, 2, 2, 2), pty ='s')
+
+SVM_digit_s1 <- which(pred_SVM == y_test & y_test== 1) # successful example of 1
+index = sample(SVM_digit_s1,4)
+for (i in index){
+  m = rotate(matrix(unlist(x_test[i,-1]),ncol = 28,byrow = T))
+  image(m, col=CUSTOM_BNW(255), main = paste("Actual:", y_test[i], "Predicted:", pred_SVM[i]))
+}
+SVM_digit_f1 <- which(pred_SVM_train != y_train & y_train== 1) # failed example of 1
+index = sample(SVM_digit_f1,4)
+for (i in index){
+  m = rotate(matrix(unlist(x_train[i,-1]),ncol = 28,byrow = T))
+  image(m, col=CUSTOM_BNW(255), main = paste("Actual:", y_train[i], "Predicted:", pred_SVM_train[i]))
+}
+
+```
+
+```{r}
+# successful & failed examples of 7
+par(mfrow = c(2, 4), mar=c(2, 2, 2, 2), pty ='s')
+
+SVM_digit_s1 <- which(pred_SVM == y_test & y_test== 7) # successful example of 7
+index = sample(SVM_digit_s1,4)
+for (i in index){
+  m = rotate(matrix(unlist(x_test[i,-1]),ncol = 28,byrow = T))
+  image(m, col=CUSTOM_BNW(255), main = paste("Actual:", y_test[i], "Predicted:", pred_SVM[i]))
+}
+SVM_digit_f1 <- which(pred_SVM_train != y_train & y_train== 7) # failed example of 7
+index = sample(SVM_digit_f1,4)
+for (i in index){
+  m = rotate(matrix(unlist(x_train[i,-1]),ncol = 28,byrow = T))
+  image(m, col=CUSTOM_BNW(255), main = paste("Actual:", y_train[i], "Predicted:", pred_SVM_train[i]))
+}
+```
+

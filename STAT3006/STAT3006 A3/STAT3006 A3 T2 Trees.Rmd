@@ -1,0 +1,115 @@
+---
+title: "STAT3006 A3 T2 Trees"
+output: html_notebook
+---
+
+```{r}
+attach(iris)
+```
+<br>
+
+##### a) characterisation of each class
+```{r}
+library(rpart)
+library(rpart.plot)
+tree.fit <- rpart(Species ~ ., data=iris)
+tree.fit
+rpart.plot(tree.fit)
+
+```
+
+<br>
+
+##### b) Apparent error rate
+```{r}
+library(caret)
+tree_pred <- predict(tree.fit, newdata = iris[-5], type='class')
+confusionMatrix(tree_pred, iris$Species)
+
+```
+
+<br>
+
+##### c) CV error rate
+```{r}
+library(ipred)
+# Choose K value
+mypredict <- function(object, newdata) predict(object, newdata = newdata, type="class")
+k_value <- vector() # k-fold
+overall_error <- vector() # overall error rate
+
+for (num in c(3:20)){
+  error_estimate <- errorest(Species ~ ., data=iris, model=rpart, estimator="cv", est.para=control.errorest(k=num, predictions=TRUE), predict=mypredict)
+  overall_error <- c(overall_error, error_estimate$error)
+  k_value <- c(k_value, num)
+}
+
+
+library(ggpubr)
+# k-fold vs. overall error rate
+ggplot(data.frame(x=k_value, y=overall_error), aes(x=k_value, y=overall_error)) + geom_line() + ggtitle("Overall Error Rate with k-fold CV")
+
+```
+```{r}
+# Split data set
+library(caTools)
+set.seed(123)
+split <- sample.split(iris$Species, SplitRatio = 0.6)
+train = subset(iris, split == TRUE) # 60% for training set
+test = subset(iris, split == FALSE) # 40% for test set
+
+ctrl <- trainControl(method = "cv", number=10) # 10-fold CV
+tree.train <- train(train[,-5], train[,5], method = "rpart", trControl = ctrl)
+tree_test_pred <- predict(tree.train, test[-5])
+confusionMatrix(tree_test_pred, factor(test$Species))
+
+```
+
+```{r}
+options(digits=2)
+# 95% CI for class-specific error rates
+binom.test(c(0,20), conf.level = 0.95)$conf.int # setosa
+binom.test(c(5,15), conf.level = 0.95)$conf.int # versicolor
+binom.test(c(1,19), conf.level = 0.95)$conf.int # virginica
+binom.test(c(6,54), conf.level = 0.95)$conf.int # overall
+```
+
+
+
+<br>
+
+##### d) Decision boundaries
+```{r}
+# iris data for each pair of variables
+x1 <- iris[,c("Sepal.Length", "Sepal.Width", "Species")]  # SL & SW
+x2 <- iris[,c("Sepal.Length", "Petal.Length", "Species")] # SL & PL
+x3 <- iris[,c("Sepal.Length", "Petal.Width", "Species")]  # SL & PW
+x4 <- iris[,c("Sepal.Width", "Petal.Length", "Species")]  # SW & PL
+x5 <- iris[,c("Sepal.Width", "Petal.Width", "Species")]   # SW & PW
+x6 <- iris[,c("Petal.Length", "Petal.Width", "Species")]  # PL & PW
+
+# Tree model for each pair of variables
+m1 <- rpart(Species ~ ., data=x1)
+m2 <- rpart(Species ~ ., data=x2)
+m3 <- rpart(Species ~ ., data=x3)
+m4 <- rpart(Species ~ ., data=x4)
+m5 <- rpart(Species ~ ., data=x5)
+m6 <- rpart(Species ~ ., data=x6)
+
+# Tree decision boundary plots
+db1 <- decisionplot(m1, x1, class = "Species", main = "Decision Trees")
+db2 <- decisionplot(m2, x2, class = "Species", main = "Decision Trees")
+db3 <- decisionplot(m3, x3, class = "Species", main = "Decision Trees")
+db4 <- decisionplot(m4, x4, class = "Species", main = "Decision Trees")
+db5 <- decisionplot(m5, x5, class = "Species", main = "Decision Trees")
+db6 <- decisionplot(m6, x6, class = "Species", main = "Decision Trees")
+```
+
+
+```{r}
+tree.new <- rpart(Species ~ ., data=iris, parms = list(prior = c(0.2,0.2,0.6)))
+rpart.plot(tree.new)
+
+```
+
+

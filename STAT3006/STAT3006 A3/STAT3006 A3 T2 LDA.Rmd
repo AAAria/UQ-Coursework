@@ -1,0 +1,151 @@
+---
+title: "STAT3006 A3 T2 - LDA"
+output: html_notebook
+---
+<br>
+
+```{r}
+attach(iris)
+```
+
+
+##### a) characterisation of each class
+```{r}
+# LDA for training set
+library(MASS)
+lda.fit <- lda(Species ~ ., iris)
+lda.fit # parameter estimation
+
+```
+LDA differentiates the classes of observations by forming linear discriminants with their means, variances and prior probabilities. 
+
+<br>
+
+##### b) Apparent error rate
+```{r}
+library(caret)
+lda_pred <- predict(lda.fit, newdata = iris[-5])
+confusionMatrix(lda_pred$class, iris$Species)
+
+```
+<br>
+
+##### c) CV error rate
+```{r}
+library(ipred)
+# Choose K value
+mypredict <- function(object, newdata) predict(object, newdata = newdata)$class
+k_value <- vector() # k-fold
+overall_error <- vector() # overall error rate
+
+for (num in c(3:20)){
+  error_estimate <- errorest(Species ~ ., data=iris, model=lda, estimator="cv", est.para=control.errorest(k=num, predictions=TRUE), predict=mypredict)
+  overall_error <- c(overall_error, error_estimate$error)
+  k_value <- c(k_value, num)
+}
+
+library(ggpubr)
+# k-fold vs. overall error rate
+ggplot(data.frame(x=k_value, y=overall_error), aes(x=k_value, y=overall_error)) + geom_line() + ggtitle("Overall Error Rate with k-fold CV")
+
+```
+
+```{r}
+# Split data set
+library(caTools)
+set.seed(123)
+split <- sample.split(iris$Species, SplitRatio = 0.6)
+train = subset(iris, split == TRUE) # 60% for training set
+test = subset(iris, split == FALSE) # 40% for test set
+
+ctrl <- trainControl(method = "cv", number=10) # 10-fold CV
+lda.train <- train(train[,-5], train[,5], method = "lda", trControl = ctrl)
+lda_test_pred <- predict(lda.train, test[-5])
+confusionMatrix(lda_test_pred, factor(test$Species))
+
+```
+
+```{r}
+options(digits=2)
+# 95% CI for class-specific error rates
+binom.test(c(0,20), conf.level = 0.95)$conf.int # setosa
+binom.test(c(1,19), conf.level = 0.95)$conf.int # versicolor
+binom.test(c(1,19), conf.level = 0.95)$conf.int # virginica
+binom.test(c(2,58), conf.level = 0.95)$conf.int # overall
+```
+
+
+<br>
+
+##### d) Decision boundaries
+```{r include=FALSE}
+decisionplot <- function(model, data, class = NULL, predict_type = "class", resolution = 100, showgrid = TRUE, ...) {
+
+  if(!is.null(class)) cl <- data[,class] else cl <- 1
+  data <- data[,1:2]
+  k <- length(unique(cl))
+
+  plot(data, col = as.integer(cl)+1L, pch = as.integer(cl)+1L, ...)
+
+  # make grid
+  r <- sapply(data, range, na.rm = TRUE)
+  xs <- seq(r[1,1], r[2,1], length.out = resolution)
+  ys <- seq(r[1,2], r[2,2], length.out = resolution)
+  g <- cbind(rep(xs, each=resolution), rep(ys, time = resolution))
+  colnames(g) <- colnames(r)
+  g <- as.data.frame(g)
+
+  ### guess how to get class labels from predict
+  ### (unfortunately not very consistent between models)
+  p <- predict(model, g, type = predict_type)
+  if(is.list(p)) p <- p$class
+  p <- as.factor(p)
+
+  if(showgrid) points(g, col = as.integer(p)+1L, pch = ".")
+
+  z <- matrix(as.integer(p), nrow = resolution, byrow = TRUE)
+  contour(x = xs, y = ys, z, add = TRUE, drawlabels = FALSE,
+    lwd = 2, levels = (1:(k-1))+.5)
+  invisible(z)
+}
+```
+
+```{r}
+# iris data for each pair of variables
+x1 <- iris[,c("Sepal.Length", "Sepal.Width", "Species")]  # SL & SW
+x2 <- iris[,c("Sepal.Length", "Petal.Length", "Species")] # SL & PL
+x3 <- iris[,c("Sepal.Length", "Petal.Width", "Species")]  # SL & PW
+x4 <- iris[,c("Sepal.Width", "Petal.Length", "Species")]  # SW & PL
+x5 <- iris[,c("Sepal.Width", "Petal.Width", "Species")]   # SW & PW
+x6 <- iris[,c("Petal.Length", "Petal.Width", "Species")]  # PL & PW
+
+# LDA model for each pair of variables
+m1 <- lda(Species ~ ., x1)
+m2 <- lda(Species ~ ., x2)
+m3 <- lda(Species ~ ., x3)
+m4 <- lda(Species ~ ., x4)
+m5 <- lda(Species ~ ., x5)
+m6 <- lda(Species ~ ., x6)
+
+# decision boundary plots
+db1 <- decisionplot(m1, x1, class = "Species", main = "LDA")
+db2 <- decisionplot(m2, x2, class = "Species", main = "LDA")
+db3 <- decisionplot(m3, x3, class = "Species", main = "LDA")
+db4 <- decisionplot(m4, x4, class = "Species", main = "LDA")
+db5 <- decisionplot(m5, x5, class = "Species", main = "LDA")
+db6 <- decisionplot(m6, x6, class = "Species", main = "LDA")
+
+```
+<br>
+
+##### g) change proportions for 3 classes
+```{r}
+lda.new <- lda(Species ~ ., iris, prior=c(0.2,0.2,0.6))
+lda.new
+
+```
+
+
+
+
+
