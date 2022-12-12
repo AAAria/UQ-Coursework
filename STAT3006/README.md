@@ -1,6 +1,6 @@
 # STAT3006 Statistical Learning
 
-Some statistical learning problems using Iris dataset, mnist dataset and etc. 
+A series of statistical learning problems on Iris dataset, mnist dataset and etc. 
 
 Tools: R
 
